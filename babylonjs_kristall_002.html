@@ -1,0 +1,280 @@
+<!DOCTYPE html>
+<html>
+    <head>
+        <meta http-equiv="Content-Type" content="text/html; charset=utf-8" />
+
+        <title>Superposition von Elementarwellen</title>
+
+        <!-- Babylon.js -->
+        <script src="https://cdnjs.cloudflare.com/ajax/libs/dat-gui/0.6.2/dat.gui.min.js"></script>
+        <script src="https://preview.babylonjs.com/babylon.js"></script>
+        <script src="https://preview.babylonjs.com/materialsLibrary/babylonjs.materials.min.js"></script>
+        <script src="https://preview.babylonjs.com/proceduralTexturesLibrary/babylonjs.proceduralTextures.min.js"></script>
+        <script src="https://preview.babylonjs.com/postProcessesLibrary/babylonjs.postProcess.min.js"></script>
+        <script src="https://preview.babylonjs.com/loaders/babylonjs.loaders.js"></script>
+        <script src="https://preview.babylonjs.com/serializers/babylonjs.serializers.min.js"></script>
+        <script src="https://preview.babylonjs.com/gui/babylon.gui.min.js"></script>
+        <script src="https://preview.babylonjs.com/inspector/babylon.inspector.bundle.js"></script>
+
+        <style>
+            html, body {
+                overflow: hidden;
+                width: 100%;
+                height: 100%;
+                margin: 0;
+                padding: 0;
+            }
+
+            #renderCanvas {
+                width: 100%;
+                height: 100%;
+                touch-action: none;
+            }
+        </style>
+    </head>
+<body>
+    <canvas id="renderCanvas"></canvas>
+    <script>
+
+        var canvas = document.getElementById("renderCanvas");
+
+        var startRenderLoop = function (engine, canvas) {
+            engine.runRenderLoop(function () {
+                if (sceneToRender && sceneToRender.activeCamera) {
+                    sceneToRender.render();
+                }
+            });
+        }
+
+        var engine = null;
+        var scene = null;
+        var sceneToRender = null;
+        var createDefaultEngine = function() { return new BABYLON.Engine(canvas, true, { preserveDrawingBuffer: true, stencil: true,  disableWebGL2Support: false}); };
+        var createScene = function() {
+          var scene = new BABYLON.Scene(engine);
+          scene.clearColor = new BABYLON.Color3( .8, .8, .8);
+          var camera = new BABYLON.ArcRotateCamera("camera1",  0, 0, 0, new BABYLON.Vector3(0, 0, -0), scene);
+          camera.setPosition(new BABYLON.Vector3(0, 70, -100));
+          camera.attachControl(canvas, true);
+          var light = new BABYLON.HemisphericLight("light1", new BABYLON.Vector3(1, 0.5, 0), scene);
+          light.intensity = 0.7;
+          var pl = new BABYLON.PointLight("pl", new BABYLON.Vector3(0, 0, 0), scene);
+          pl.diffuse = new BABYLON.Color3(1, 1, 1);
+          pl.specular = new BABYLON.Color3(1, 0, 0);
+          pl.intensity = 0.95;
+          var matFlaeche = new BABYLON.StandardMaterial("mat1", scene);
+          matFlaeche.alpha = 1.0;
+          matFlaeche.diffuseColor = new BABYLON.Color3(0.0, 0.1, 1.0);
+          matFlaeche.backFaceCulling = false;
+          matFlaeche.wireframe = false;
+	      var matSphere = new BABYLON.StandardMaterial("matSphere", scene);
+          matSphere.alpha = 1.0;
+          matSphere.diffuseColor = new BABYLON.Color3(1.0, 0.1, 0.1);
+          matSphere.backFaceCulling = false;
+
+          
+          let T = 2.0; // Periodendauer
+          let a = 2.0; // Amplitude
+          let dt = 0.10; // Zeitschritt
+          let lambda0 = 10.0; // Wellenlänge
+          let d = 15; // Abstand der Erreger vom Mittelpunkt
+          let k = 1; // Anzahl Quellen
+          let delta_d;
+          let bildsch = false;
+          let bildschirm;
+          let eben = false;
+          let ebene;
+          let pcs= new BABYLON.PointsCloudSystem("pcs", 10, scene) 
+          
+          /*
+          let myfunc = function(particle, i) {
+            particle.position = new BABYLON.Vector3(3*i-100, 20*Math.sin(i/10), 100);
+            particle.color = new BABYLON.Color4(1.0,0.1,0.1)
+          }
+          pcs.addPoints(100, myfunc);
+          let punkte = pcs.buildMeshAsync();
+
+          pcs.updateParticle = function(particle) {
+            particle.position.x += 0.5;
+          }
+          */
+          
+          // path function
+          let pathFunction = function(t) {
+            let path = []; 
+            for (let i = 0; i < 200; i += 1) {
+              let x =  i - 100;
+              let y = 0;
+              let z = t;
+              path.push(new BABYLON.Vector3(x, y, z));
+            }
+            return path;
+          };
+          
+          // update path function
+          let updatePath = function(path, t) {
+            for (let i = 0; i < path.length; i++) {
+              let x = path[i].x;
+              let z = path[i].z;
+              
+              let y_ges = 0;
+              
+              if (k == 1) {
+		        let r = Math.sqrt(Math.pow(x,2) + Math.pow(z,2));
+                let y_particular = a * Math.sin(2 * Math.PI * r / lambda0 - t / T);
+                y_ges += y_particular;
+		      } else {
+                for (let j = 0; j < k; j++) {
+                  let r = Math.sqrt(Math.pow(x - d / 2 + j * delta_d,2) + Math.pow(z,2));
+                  let y_particular = a * Math.sin(2 * Math.PI * r / lambda0 - t / T);
+                  y_ges += y_particular / k;
+                }
+              }
+              path[i].x = x;
+              path[i].y = y_ges;
+              path[i].z = z;
+            }
+          };
+          
+          // ribbon creation
+          let sideO = BABYLON.Mesh.BACKSIDE;
+          let pathArray = [];
+          for(let i = -100; i < 100; i++) {
+            pathArray.push(pathFunction(i));
+          }
+          let mesh = BABYLON.Mesh.CreateRibbon("ribbon", pathArray, false, false, 0, scene, true, sideO);
+          mesh.material = matFlaeche;       
+          
+          // morphing
+          let t = 0;
+          scene.registerBeforeRender(function(){
+        	// update pathArray
+        	for(let p = 0; p < pathArray.length; p++) {
+            	updatePath(pathArray[p], t);
+          	}
+          	delta_d = d / (k - 1);
+        	// ribbon update
+        	mesh = BABYLON.Mesh.CreateRibbon(null, pathArray, null, null, null, null, null, null, mesh);
+           	t += dt;
+        	pl.position = camera.position;
+          });
+          
+          scene.registerAfterRender(() => {
+            pcs.setParticles()
+          });
+            
+          //------------------------------
+          //https://nooshu.com/lab/dat-gui-controller-library-for-javascript/
+          let WellenKontrolle = function() {
+            this.distanz = 5;
+            this.wellenlaenge = 8;
+            this.amplitude = 4;
+            this.quellen = 1; // Anzahl Quellen
+            this.zeitschritt = 0.1;
+            this.bildschirm = false;
+            this.ebene = false;
+          };
+
+          //Create the Dat.gui controls
+          let wk = new WellenKontrolle();
+
+          //Create the GUI    
+          let gui = new dat.GUI();
+
+          //Add 2 folders  
+          let f1 = gui.addFolder('Welleneigenschaften');
+          let f2 = gui.addFolder('Steuerung');
+          f1.open();
+          f2.open();
+
+          //Add the moving particles controller to folder 1
+          f1.add(wk, 'distanz', 1, 150).step(1).name('Distanz').onChange(function(value) {
+            d = value;	
+          });
+          f1.add(wk, 'wellenlaenge', 3, 50).step(1).name('Wellenlänge').onChange(function(value) {
+            lambda0 = value;	
+          });
+          f1.add(wk, 'amplitude', 1, 20).step(1).name('Amplitude').onChange(function(value) {
+             a = value;	
+          });
+          f1.add(wk, 'quellen', 1, 21).step(1).name('Quellen').onChange(function(value) {
+			k = value;
+	      });
+          f2.add(wk, 'zeitschritt', 0.00, 0.50).step(0.02).name('Zeitschritt').onChange(function(value) {
+            dt = value;
+          });
+          f2.add(wk, 'bildschirm').name('Bildschirm').onChange(function(value) {
+		    if (bildsch == true) {
+			  bildsch = false;
+			  scene.removeMesh(bildschirm);
+			} else {
+			  bildsch = true;
+			  bildschirm = BABYLON.MeshBuilder.CreateBox("bildschirm", {height: 20, width: 200, depth: 0.1, updatable: true});
+              bildschirm.position.x = 0;
+              bildschirm.position.z = 100;
+              let positions = bildschirm.getVerticesData(BABYLON.VertexBuffer.PositionKind);
+              //positions = positions.map((v) => 2 * v);
+              bildschirm.updateVerticesData(BABYLON.VertexBuffer.PositionKind, positions);
+              var materialBildschirm = new BABYLON.StandardMaterial(scene);
+              materialBildschirm.alpha = 0.8;
+              materialBildschirm.diffuseColor = new BABYLON.Color3(0.3, 0.3, 0.3);
+              bildschirm.material = materialBildschirm;
+			}
+		  });
+		  f2.add(wk, 'ebene').name('Ebene').onChange(function(value) {
+		    if (eben == true) {
+			  eben = false;
+			  scene.removeMesh(ebene);
+			} else {
+			  eben = true;
+			  ebene = BABYLON.MeshBuilder.CreateBox("bildschirm", {height: 300, width: 300, depth: 0.1, updatable: true});
+              ebene.position.x = 0;
+              ebene.position.y = 0;
+              let positions = ebene.getVerticesData(BABYLON.VertexBuffer.PositionKind);
+              ebene.updateVerticesData(BABYLON.VertexBuffer.PositionKind, positions);
+              let axis = new BABYLON.Vector3(1, 0, 0);
+              let angle = Math.PI / 2;
+              let quaternion = new BABYLON.Quaternion.RotationAxis(axis, angle);
+              ebene.rotationQuaternion = quaternion;
+              var materialEbene = new BABYLON.StandardMaterial(scene);
+              materialEbene.alpha = 0.5;
+              materialEbene.diffuseColor = new BABYLON.Color3(0.0, 0.9, 0.3);
+              ebene.material = materialEbene;
+			}
+		  });
+          //------------------------------
+          /*
+          scene.fogMode = BABYLON.Scene.FOGMODE_EXP;
+          scene.fogColor = new BABYLON.Color3(0.9, 0.9, 0.85);
+          scene.fogDensity = 0.001;
+          */
+          
+          return scene;
+        }
+        window.initFunction = async function() {
+                    
+                    
+          let asyncEngineCreation = async function() {
+            try {
+              return createDefaultEngine();
+            } catch(e) {
+              console.log("the available createEngine function failed. Creating the default engine instead");
+              return createDefaultEngine();
+            }
+          }
+
+        window.engine = await asyncEngineCreation();
+        if (!engine) throw 'engine should not be null.';
+        startRenderLoop(engine, canvas);
+        window.scene = createScene();
+        };
+        initFunction().then(() => {sceneToRender = scene                    
+        });
+
+        // Resize
+        window.addEventListener("resize", function () {
+          engine.resize();
+        });
+    </script>
+</body>
+</html>
